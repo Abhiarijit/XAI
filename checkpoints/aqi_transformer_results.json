@@ -1,0 +1,32 @@
+{
+  "model": "AQITransformer",
+  "dataset": "AQI_India_city_day",
+  "model_config": {
+    "num_features": 12,
+    "d_model": 64,
+    "nhead": 4,
+    "num_encoder_layers": 3,
+    "dim_feedforward": 128,
+    "dropout": 0.1,
+    "seq_length": 30
+  },
+  "training": {
+    "epochs_trained": 44,
+    "best_epoch": 29,
+    "best_val_loss": 0.0005565408380604468,
+    "learning_rate": 0.001,
+    "batch_size": 64,
+    "sequence_length": 30
+  },
+  "test_metrics": {
+    "MAE": 25.8054141998291,
+    "RMSE": 43.59463484765069,
+    "R2": 0.8089216947555542,
+    "MAPE": 27.469098567962646
+  },
+  "data_splits": {
+    "train_samples": 16603,
+    "val_samples": 3730,
+    "test_samples": 3737
+  }
+}

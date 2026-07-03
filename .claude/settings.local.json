@@ -2,7 +2,17 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:claude.ai)",
-      "Bash(python main.py)"
+      "Bash(python main.py)",
+      "Bash(node make_summary.js)",
+      "Bash(ls \"C:\\\\Users\\\\abhia\\\\Desktop\\\\\" 2>&1)",
+      "Read(//c/Users/abhia/**)",
+      "Bash(node make_natops_summary.js)",
+      "PowerShell(Copy-Item \"c:\\\\Users\\\\abhia\\\\Desktop\\\\counterfactual_basis_kernel-main\\\\TAGFC_Session_Summary.docx\" \"c:\\\\Users\\\\abhia\\\\Desktop\\\\counterfactual_basis_kernel-main\\\\TAGFC_Session_Summary_copy.docx\" -Force; Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [System.IO.Compression.ZipFile]::OpenRead\\(\"c:\\\\Users\\\\abhia\\\\Desktop\\\\counterfactual_basis_kernel-main\\\\TAGFC_Session_Summary_copy.docx\"\\); $entry = $zip.Entries | Where-Object { $_.FullName -eq \"word/document.xml\" }; $reader = New-Object System.IO.StreamReader\\($entry.Open\\(\\)\\); $xml = $reader.ReadToEnd\\(\\); $reader.Close\\(\\); $zip.Dispose\\(\\); $xml -replace '<[^>]+>', '' -replace '&lt;', '<' -replace '&gt;', '>' -replace '&amp;', '&' -replace '\\\\s+', ' ')",
+      "Bash(rm \"c:\\\\Users\\\\abhia\\\\Desktop\\\\counterfactual_basis_kernel-main\\\\TAGFC_Session_Summary_copy.docx\" 2>/dev/null; ls c:\\\\Users\\\\abhia\\\\Desktop\\\\counterfactual_basis_kernel-main\\\\*.py 2>/dev/null || echo \"no py files at root\")",
+      "Bash(dir \"c:\\\\Users\\\\abhia\\\\Desktop\\\\counterfactual_basis_kernel-main\" /b /a:d)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\abhia\\Desktop\\counterfactual_basis_kernel-main"
     ]
   }
 }

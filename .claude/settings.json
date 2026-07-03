@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\abhia\\\\Desktop\\\\counterfactual_basis_kernel-main\\\\AB_CF_Natops\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(head -50)",
+      "Bash(python -c ' *)",
+      "Bash(findstr /V \"Warning\")",
+      "Bash(winget search *)",
+      "Bash(winget install *)",
+      "Bash(where pdflatex *)",
+      "Bash(winget list *)",
+      "Bash(pdflatex --version)",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\abhia\\\\AppData\\\\Local\\\\Programs\\\\MiKTeX\\\\miktex\\\\bin\\\\x64\\\\\" -Filter \"pdflatex.exe\" -ErrorAction SilentlyContinue; Get-ChildItem \"C:\\\\Program Files\\\\MiKTeX\\\\miktex\\\\bin\\\\x64\\\\\" -Filter \"pdflatex.exe\" -ErrorAction SilentlyContinue)",
+      "Read(//c/Program Files/MiKTeX/miktex/bin/x64/**)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\abhia\\Desktop\\counterfactual_basis_kernel-main"
+    ]
+  }
+}

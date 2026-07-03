@@ -1,0 +1,88 @@
+\documentclass{CSEThesis}
+% Standard packages
+\usepackage{amsmath}
+\usepackage{graphics}
+\usepackage{setspace}
+\usepackage{multicol}
+\usepackage{subfigure}
+\usepackage{epsfig,color}
+\usepackage[utf8]{inputenc}
+\usepackage{color}
+\usepackage{pifont}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
+
+\bibliographystyle{ieeetr}
+\usepackage[colorlinks=true, linkcolor=black, citecolor=black, urlcolor=black]{hyperref}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\renewcommand{\familydefault}{\rmdefault}
+\usepackage{booktabs}
+\usepackage{adjustbox}
+
+% ---- Page-reduction formatting overrides ----
+\usepackage[top=1in, bottom=1in, left=1.25in, right=1in]{geometry}
+\setstretch{1.1}
+\setlength{\parskip}{2pt}
+\setlength{\floatsep}{8pt}
+\setlength{\textfloatsep}{8pt}
+\setlength{\intextsep}{6pt}
+% ---------------------------------------------
+
+\btptitle = {Actionable Counterfactuals for RUL enhancement using Feature Attribution}
+\name     = {Avinash Yadav and Vaibhav Wankar}
+\rollno   = {244101008 and 244101061}
+\email    = {avinashy@iitg.ac.in and w.vaibhav@iitg.ac.in}
+\guide    = {Prof. Rashmi Dutta Baruah}
+
+\begin{document}
+
+\include{title}
+\clearpage
+\include{certificate}
+\clearpage
+\bibliographystyle{ieeetr}
+\include{acknowledgement}
+\clearpage
+\include{abstract}
+\clearpage
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+\def\headrulehook{\color{black}}
+\normalfont\upshape
+
+%========== Chapters
+\typeout{}
+\include{chapter1}
+\clearpage
+\typeout{}
+\include{chapter2}
+\clearpage
+\typeout{}
+\include{chapter3}
+\clearpage
+\typeout{}
+\include{chapter4}
+\clearpage
+\typeout{}
+\include{chapter5}
+\clearpage
+\typeout{}
+\include{chapter6}
+\clearpage
+\typeout{}
+\include{chapter7}
+\clearpage
+\typeout{}
+\include{futurework}
+\typeout{}
+\include{refrences}
+\typeout{}
+
+% Bibliography is included via refrences.tex (thebibliography environment)
+
+\end{document}

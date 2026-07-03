@@ -1,0 +1,61 @@
+\chapter{Introduction}
+
+\section{Motivation}
+
+Modern industrial, medical, and environmental systems generate continuous streams of multivariate time-series data from networks of sensors. In industrial machinery, turbofan engines, wind turbines, and rolling-element bearings are monitored through temperature, pressure, and vibration signals across dozens of channels. In healthcare, wearable devices record ECG, accelerometer, and gyroscope traces simultaneously. In environmental monitoring, distributed sensor arrays track atmospheric and hydrological variables over time. Across all these domains, the ability to predict system degradation before it manifests as failure is of enormous practical and economic significance.
+
+Remaining Useful Life (RUL) prediction is the task of estimating how many operational cycles, hours, or timesteps remain before a monitored system reaches a failure threshold. Accurate RUL estimates enable condition-based maintenance, reducing unplanned downtime, preventing catastrophic failures, and lowering maintenance costs. Deep learning models — particularly Transformer-based architectures — have demonstrated state-of-the-art performance on RUL prediction benchmarks such as the NASA Commercial Modular Aero-Propulsion System Simulation (CMAPSS) dataset. These models learn rich temporal and cross-sensor dependencies from raw sensor data and achieve low prediction errors.
+
+However, the adoption of such models in safety-critical environments is severely constrained by their lack of transparency. A maintenance engineer who receives a ``Critical'' degradation alert from a black-box model cannot act effectively without knowing \emph{which sensors changed}, \emph{over which time window}, and \emph{in what direction} to shift the system toward a safer operating regime. This need for actionable, human-understandable explanations motivates the field of Explainable Artificial Intelligence (XAI) for time-series systems.
+
+\section{Problem Statement}
+
+Explainability in machine learning can take many forms: feature importance maps, saliency gradients, attention weights, or concept-based explanations. Among these, \emph{counterfactual explanations} have attracted particular interest because of their intuitive, actionable nature. A counterfactual explanation answers the question:
+
+\begin{quote}
+\textit{``What is the minimal change to the input that would cause the model to change its prediction to a desired target class?''}
+\end{quote}
+
+Formally, given a classifier $f: \mathbb{R}^{T \times D} \rightarrow \mathcal{Y}$, a query instance $\mathbf{X} \in \mathbb{R}^{T \times D}$ with predicted class $y = f(\mathbf{X})$, and a target class $y^* \neq y$, a counterfactual $\widetilde{\mathbf{X}}$ satisfies:
+\begin{equation}
+    f(\widetilde{\mathbf{X}}) = y^*, \quad \text{and} \quad \|\widetilde{\mathbf{X}} - \mathbf{X}\| \text{ is minimised.}
+\end{equation}
+
+For a turbofan engine predicted as ``Critical'' (RUL $\leq 30$ cycles), a valid counterfactual would show the smallest sensor trajectory modification that shifts the model's prediction to ``Healthy'' (RUL $> 120$ cycles). This directly translates to an actionable recommendation: e.g., \textit{``reduce high-pressure compressor exit temperature $T_{30}$ by $X$ units over the next 10 cycles''}.
+
+Beyond validity (achieving the target class), a high-quality counterfactual for multivariate time series must also satisfy several desiderata:
+\begin{itemize}
+    \item \textbf{Proximity}: The counterfactual should be close to the original instance in feature space.
+    \item \textbf{Sparsity}: Only a small subset of sensors and timesteps should be modified.
+    \item \textbf{Physical coherence}: Modified sensor trajectories must remain physically plausible; sensors that are physically correlated (e.g., temperature and coolant flow) should change in a consistent manner.
+    \item \textbf{Actionability}: The suggested changes should correspond to operationally feasible interventions.
+\end{itemize}
+
+\section{Research Gap}
+
+Despite significant progress in counterfactual explanation methods for time series, existing approaches suffer from two fundamental limitations.
+
+\textbf{Lack of frequency-domain awareness.} Time-series signals carry information at multiple temporal scales simultaneously — slow degradation trends (low-frequency components), periodic maintenance cycles (mid-frequency), and transient fault signatures (high-frequency). All prior counterfactual methods for time series — including Native Guide~\cite{delaney2021instance}, CoMTE~\cite{ates2021counterfactual}, AB-CF~\cite{li2023abcf}, and SETS~\cite{bahri2022sets} — operate exclusively in the raw time domain. Perturbations applied in the time domain are inherently unstructured across frequency bands: a pointwise change may inadvertently corrupt low-frequency trends while targeting high-frequency components, or vice versa. This leads to counterfactuals that are physically implausible and difficult to interpret.
+
+\textbf{Absence of inter-sensor coherence enforcement.} Multivariate time-series sensors in physical systems are not independent; they are coupled by underlying physical processes. For example, in a turbofan engine, an increase in high-pressure compressor exit temperature ($T_{30}$, sensor s3) is physically linked to a decrease in fan coolant flow ($W_{31}$, sensor s20). Existing methods treat sensor channels independently during perturbation and do not enforce any cross-sensor consistency constraint. This results in counterfactuals where sensors that are tightly coupled in reality are perturbed in physically inconsistent directions.
+
+Furthermore, existing methods are largely \emph{model-agnostic}: they treat the classifier as a black box and make no use of the internal representations learned by the model. For Transformer-based classifiers, the multi-head self-attention mechanism provides rich information about which timesteps and sensor interactions the model attends to when making a prediction. Ignoring this information leaves significant explanatory value on the table.
+
+These three gaps — frequency-domain blindness, inter-sensor incoherence, and model-unawareness — motivate the development of a principled counterfactual explanation framework specifically designed for Transformer-based multivariate time-series classifiers.
+
+\section{Objectives}
+
+This work proposes \textbf{TAGFC} (\textbf{T}ransformer \textbf{A}ttention-\textbf{G}uided \textbf{F}requency \textbf{C}ounterfactual), a novel method that addresses the identified research gaps. The specific objectives of this work are:
+
+\begin{enumerate}
+    \item \textbf{Model-aware saliency extraction:} Leverage the internal attention weights of a trained Transformer model through \emph{attention rollout} to compute a temporal saliency map that identifies which timesteps are most influential to the model's prediction. This allows perturbations to be guided toward model-relevant regions rather than applied blindly.
+
+    \item \textbf{Frequency-domain counterfactual generation:} Apply the Haar Discrete Wavelet Transform (DWT) to decompose sensor signals into multi-resolution frequency bands. Generate counterfactuals by perturbing wavelet coefficients rather than raw time-domain values, enabling structured, frequency-aware modifications that respect the temporal scale of degradation dynamics.
+
+    \item \textbf{Inter-sensor coherence enforcement:} Incorporate a Mahalanobis-distance-based cross-sensor coherence penalty into the counterfactual optimisation objective, ensuring that multi-sensor perturbations remain consistent with the covariance structure of real sensor data.
+
+    \item \textbf{Exact sparsity via proximal optimisation:} Solve the counterfactual optimisation using Proximal Gradient Descent with soft-thresholding, which produces \emph{exact} coefficient-level sparsity (i.e., most perturbations are set exactly to zero), as opposed to approximate L1 relaxations used in prior work.
+
+    \item \textbf{Comprehensive evaluation:} Evaluate TAGFC against four competitive baselines (CoMTE, AB-CF, Native Guide, SETS) across two benchmark datasets — NASA CMAPSS FD001 (industrial RUL prediction) and NATOPS (gesture recognition) — using eight quantitative metrics covering validity, proximity, sparsity, coherence, and confidence.
+\end{enumerate}
+

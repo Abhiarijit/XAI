@@ -1,0 +1,125 @@
+\chapter{Literature Review}
+
+\section{Background}
+
+\subsection{Remaining Useful Life Prediction and the CMAPSS Dataset}
+
+Remaining Useful Life (RUL) prediction is a central problem in prognostics and health management (PHM). Given a history of sensor measurements from a degrading system, the goal is to estimate the number of operational cycles remaining before the system reaches a predefined failure threshold. Accurate RUL estimates enable condition-based maintenance strategies that minimise unplanned downtime and reduce maintenance costs.
+
+The NASA Commercial Modular Aero-Propulsion System Simulation (CMAPSS) dataset~\cite{saxena2008damage} is the most widely used benchmark for RUL prediction. It simulates the degradation of turbofan engines under varying operational conditions and fault modes. The FD001 subset — used in this work — contains 100 training engines and 100 test engines, each operating under a single flight condition with a single fault mode (HPC degradation). Each engine is described by 21 sensor readings per cycle. After removing 7 sensors that remain constant across all cycles (s1, s5, s6, s10, s16, s18, s19), 14 informative sensors remain. The RUL label is capped at 125 cycles to reflect the piecewise-linear degradation assumption used in the literature~\cite{heimes2008recurrent}. For counterfactual explanation, continuous RUL values are discretised into three classes: \textit{Healthy} (RUL $> 120$), \textit{Degrading} ($30 <$ RUL $\leq 120$), and \textit{Critical} (RUL $\leq 30$).
+
+\subsection{Multivariate Time-Series Classification and the NATOPS Dataset}
+
+Beyond prognostics, multivariate time-series (MTS) classification arises in gesture recognition, activity recognition, and medical diagnosis. The NATOPS dataset~\cite{zhang2011extracting}, sourced from the UEA Time Series Classification Archive, contains 24-channel motion-capture recordings of naval aircraft handling officers performing 6 standard gesture classes (e.g., \textit{I have command}, \textit{All clear}, \textit{Lock wings}). Each recording has $T = 51$ timesteps and $D = 24$ channels encoding the $x$, $y$, $z$ coordinates of the right hand, left hand, right elbow, left elbow, right wrist, left wrist, right thumb, and left thumb. NATOPS provides a diverse multi-class benchmark for evaluating the generality of counterfactual explanation methods beyond binary industrial settings.
+
+\subsection{Transformer Architecture for Time-Series Classification}
+
+Transformer models~\cite{vaswani2017attention}, originally developed for natural language processing, have been adapted for time-series tasks with strong empirical results~\cite{zerveas2021transformer}. The core building block is the multi-head self-attention (MHSA) mechanism, which computes a weighted sum of value vectors using query-key dot-product similarities:
+\begin{equation}
+    \text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^\top}{\sqrt{d_k}}\right)\mathbf{V},
+\end{equation}
+where $\mathbf{Q}, \mathbf{K}, \mathbf{V} \in \mathbb{R}^{T \times d_k}$ are the query, key, and value matrices. In multi-head attention, $H$ independent attention heads are computed in parallel and their outputs concatenated. The attention weights $\mathbf{A}^l \in \mathbb{R}^{H \times T \times T}$ at each layer $l$ capture temporal dependencies learned by the model.
+
+In this work, a Transformer encoder is used for both CMAPSS FD001 and NATOPS classification. The architecture consists of an input linear projection, sinusoidal positional encoding, $L$ stacked Transformer encoder layers with pre-LayerNorm, global average pooling, and a final classification head.
+
+\subsection{Counterfactual Explanations — Taxonomy}
+
+Counterfactual explanation methods for time series can be broadly categorised along three axes:
+\begin{itemize}
+    \item \textbf{Search strategy}: instance-based (retrieve a nearest unlike neighbour and modify it) vs.\ optimisation-based (solve a differentiable objective).
+    \item \textbf{Domain of perturbation}: time domain vs.\ frequency/wavelet domain.
+    \item \textbf{Model dependency}: model-agnostic (treat classifier as a black box) vs.\ model-aware (use internal representations such as gradients or attention weights).
+\end{itemize}
+
+The four existing methods reviewed in this chapter are all model-agnostic and operate in the time domain. Their limitations along these axes motivate the design of TAGFC.
+
+%------------------------------------------------------------------------
+\section{Existing Counterfactual Methods for Time Series}
+
+\subsection{CoMTE: Counterfactual Multivariate Time-series Explanation}
+
+CoMTE~\cite{ates2021counterfactual} (Counterfactual Multivariate Time-series Explanation) is a greedy, instance-based method proposed by Ates et al. (ICAPAI 2021). The central idea is to construct a counterfactual by selectively replacing entire sensor channels of the query instance with the corresponding channels of a \textit{Nearest Unlike Neighbour} (NUN) — the most similar training instance belonging to the target class.
+
+\textbf{Algorithm.} Given query $\mathbf{X}$ with class $y$ and NUN $\mathbf{X}^*$ with class $y^*$, CoMTE proceeds greedily:
+\begin{enumerate}
+    \item Initialise the counterfactual as $\widetilde{\mathbf{X}} = \mathbf{X}$.
+    \item At each step, identify the sensor channel whose replacement with $\mathbf{X}^*_d$ (the $d$-th channel of the NUN) produces the highest increase in the predicted probability of $y^*$.
+    \item Accept the replacement if it increases $P(y^* | \widetilde{\mathbf{X}})$.
+    \item Repeat until $f(\widetilde{\mathbf{X}}) = y^*$ or no further improvement is possible.
+\end{enumerate}
+
+\textbf{Limitations.}
+\begin{itemize}
+    \item \textbf{Whole-channel swaps}: CoMTE replaces entire sensor channels, yielding counterfactuals with maximum sparsity of $1/D$ at the channel level but zero sparsity at the timestep level — all timesteps of the swapped channel are changed even if only a short window is responsible for the prediction.
+    \item \textbf{No frequency awareness}: Perturbations are applied uniformly in the time domain, conflating slow trends and fast transients.
+    \item \textbf{Model-agnostic}: No use of the classifier's internal representations.
+    \item \textbf{NUN dependence}: Quality is bounded by the diversity of the training set; if no suitable NUN exists near the decision boundary, the counterfactual may be far from the query.
+\end{itemize}
+
+\subsection{Native Guide (NG-CF): CAM-Guided Window Replacement}
+
+Native Guide~\cite{delaney2021instance} uses CAM saliency to identify the most important temporal window in a query, then replaces that window with the corresponding window from the NUN. It is CNN-specific (CAM requires global average pooling), univariate in its original formulation, and introduces hard boundary discontinuities at segment edges — making it inapplicable to Transformer-based multivariate settings without significant modification.
+
+\subsection{SETS: Shapelet-based Counterfactuals}
+
+SETS~\cite{bahri2022sets} replaces discriminative shapelets of the source class with shapelets from the target class using a combinatorial search. The search is NP-hard and solved via heuristics; shapelets are extracted per-channel so cross-sensor dependencies are ignored; and discontinuous shapelet insertions reduce physical plausibility. Like all time-domain methods, SETS offers no frequency-band control.
+
+\subsection{AB-CF: Attention-Based Counterfactual with Entropy-Guided Segment Swap}
+
+AB-CF~\cite{li2023abcf} (Li et al., DaWaK 2023) is the most closely related prior work to TAGFC. It is a NUN-based method that identifies segments to swap using an \emph{entropy-based saliency score} computed from the probability outputs of the classifier over sliding windows.
+
+\textbf{Algorithm.}
+\begin{enumerate}
+    \item Retrieve the NUN $\mathbf{X}^*$ for the query $\mathbf{X}$.
+    \item Compute a per-timestep saliency score using Shannon entropy of the classifier's softmax output over sliding windows centred at each timestep.
+    \item Rank timesteps by saliency; identify the top-$k$ most salient temporal segments.
+    \item Replace the identified segments of $\mathbf{X}$ with the corresponding segments of $\mathbf{X}^*$ to form the counterfactual $\widetilde{\mathbf{X}}$.
+\end{enumerate}
+
+\textbf{Limitations.}
+\begin{itemize}
+    \item \textbf{Entropy saliency is indirect}: The entropy of softmax outputs over sliding windows is a coarse proxy for feature importance. It does not directly reflect the model's internal attention over individual timesteps, leading to noisier saliency estimates compared to gradient-based or attention-based methods.
+    \item \textbf{No frequency decomposition}: All perturbations remain in the time domain.
+    \item \textbf{No cross-sensor coherence}: Sensors are swapped independently; physically coupled sensors may be perturbed in inconsistent directions.
+    \item \textbf{Model-agnostic}: Despite using model outputs, AB-CF does not access internal representations such as attention weights or gradients.
+    \item \textbf{Segment boundary artefacts}: Hard segment replacement introduces discontinuities, similar to Native Guide.
+\end{itemize}
+
+%------------------------------------------------------------------------
+\section{Comparison of Existing Methods}
+
+Table~\ref{tab:baseline_comparison} summarises the key properties of the four existing methods along the dimensions most relevant to counterfactual quality for multivariate time-series data.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of existing counterfactual explanation methods for time series.}
+\label{tab:baseline_comparison}
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{Search Strategy} & \textbf{Model Dependency} & \textbf{Frequency-Aware} & \textbf{Cross-Sensor} & \textbf{Multivariate} \\
+\midrule
+CoMTE~\cite{ates2021counterfactual}          & Greedy instance-based  & Agnostic       & \xmark & \xmark & \cmark \\
+Native Guide~\cite{delaney2021instance}      & Instance-based (CAM)   & CNN-specific   & \xmark & \xmark & \xmark \\
+SETS~\cite{bahri2022sets}                    & Combinatorial search   & Agnostic       & \xmark & \xmark & \xmark \\
+AB-CF~\cite{li2023abcf}                      & Instance-based (NUN)   & Output-based   & \xmark & \xmark & \cmark \\
+\midrule
+\textbf{TAGFC (Ours)}                        & Optimisation-based     & Model-aware    & \cmark & \cmark & \cmark \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}
+
+All four existing methods share a fundamental property: they operate by swapping segments or channels from a retrieved nearest-unlike-neighbour instance. This instance-based paradigm limits the quality of counterfactuals to the diversity of the training set and introduces hard boundary discontinuities at the boundaries of replaced segments. In contrast, TAGFC is optimisation-based: it generates counterfactuals by continuously optimising a differentiable objective, allowing fine-grained, smooth perturbations that are not constrained to lie on existing training instances.
+
+%------------------------------------------------------------------------
+\section{Key Research Gaps}
+
+From the review above, three critical gaps emerge in the existing literature:
+
+\textbf{Gap 1 — No frequency-domain counterfactuals.} All reviewed methods perturb the raw time-domain signal. This ignores the fact that time-series degradation occurs at specific temporal scales: slow drift in mean sensor levels (low-frequency), oscillatory wear patterns (mid-frequency), and transient fault signatures (high-frequency). Counterfactuals generated in the time domain mix these scales uncontrollably, producing explanations that are physically hard to interpret.
+
+\textbf{Gap 2 — No inter-sensor coherence.} Physical systems impose strong statistical dependencies between sensors. Existing methods treat channels independently, generating counterfactuals where physically coupled sensors evolve in mutually inconsistent ways. Such counterfactuals are not actionable because they describe system states that cannot actually occur.
+
+\textbf{Gap 3 — No use of Transformer attention.} For Transformer-based classifiers, the internal attention mechanism encodes which temporal relationships the model has learned to rely on. Ignoring this information wastes a rich source of model-specific guidance and leads to perturbations that may change parts of the signal irrelevant to the model's decision.
+

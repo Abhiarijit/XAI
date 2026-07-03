@@ -1,0 +1,6 @@
+AQI India — Frequency-Domain Analysis
+TAGFC — Attention-Guided Frequency-Domain Counterfactual Explanations
+15 / 28
+Frequency Band Importance
+Wavelet Coefficient Δ Heatmap (Sensor × Coefficient)
+Low-frequency (approx.) coefficients carry dominant pollution trend signal; TAGFC concentrates perturbations there

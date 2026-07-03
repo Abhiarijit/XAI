@@ -1,0 +1,118 @@
+\chapter{Datasets}
+
+This chapter describes the three benchmark datasets used to evaluate TAGFC: NASA CMAPSS FD001 for industrial prognostics, AQI India for environmental monitoring, and NATOPS for human gesture recognition. Together, these datasets cover diverse application domains, sensor modalities, temporal scales, and class structures, providing a rigorous multi-domain evaluation of the proposed method. The chapter concludes with a unified description of the data preprocessing pipeline applied across all three datasets.
+
+%------------------------------------------------------------------------
+\section{NASA CMAPSS FD001 — Industrial Prognostics}
+
+\subsection{Dataset Description}
+
+The NASA Commercial Modular Aero-Propulsion System Simulation (CMAPSS) dataset~\cite{saxena2008damage} is the standard benchmark for turbofan engine degradation and Remaining Useful Life (RUL) prediction. The FD001 subset simulates 100 training engines and 100 test engines operating under a single flight condition (sea-level, high-power) with a single fault mode (High-Pressure Compressor, HPC, degradation). Each engine starts in a healthy state and degrades monotonically until failure.
+
+Each engine record contains per-cycle measurements of 21 sensors (3 operational settings + 21 sensor readings). Seven sensors (s1, s5, s6, s10, s16, s18, s19) are constant across all cycles and carry no discriminative information; these are removed, leaving $D = 14$ informative sensor channels. Engine trajectories vary in length from 128 to 362 cycles. A sliding window of length $T = 30$ cycles is applied to generate fixed-length input sequences, resulting in one sample per cycle from cycle 30 onward for each engine.
+
+\subsection{Label Construction and Class Distribution}
+
+The ground-truth RUL for each engine in the test set is provided in \texttt{RUL\_FD001.txt}. Following the piecewise-linear cap convention~\cite{heimes2008recurrent}, RUL values are capped at 125 cycles to reflect the assumption that engines with more than 125 cycles remaining are effectively equally healthy. The continuous RUL values are then discretised into $K = 3$ degradation classes:
+
+\begin{itemize}
+    \item \textbf{Healthy} (RUL $> 120$): The engine is operating well within its safe life; no maintenance action is required.
+    \item \textbf{Degrading} ($30 <$ RUL $\leq 120$): Measurable wear is present; condition-based monitoring should be intensified.
+    \item \textbf{Critical} (RUL $\leq 30$): The engine is approaching the end of its useful life; maintenance must be scheduled immediately.
+\end{itemize}
+
+The class boundaries reflect operational maintenance decision points and are consistent with those used in the prognostics literature~\cite{li2018remaining}. Due to the sliding-window construction and the monotonic degradation assumption, the dataset is imbalanced: the Healthy class dominates early in each engine's life, while Critical samples are concentrated near end-of-life. Class-weighted training is used to address this imbalance.
+
+\textbf{Dataset summary:} $T = 30$ timesteps, $D = 14$ sensor channels, $K = 3$ classes.
+
+%------------------------------------------------------------------------
+\section{AQI India — Environmental Air Quality Monitoring}
+
+\subsection{Dataset Description}
+
+The AQI India dataset is sourced from the publicly available \texttt{city\_day.csv} file~\cite{cpcb2020aqi}, published by the Central Pollution Control Board (CPCB) of India and made available on Kaggle. It contains daily air quality measurements for 26 major Indian cities spanning from January 2015 to July 2020. Each record provides daily average concentrations of 12 key pollutants alongside a composite Air Quality Index (AQI) score and its categorical label.
+
+The 12 pollutant features retained as sensor channels ($D = 12$) are:
+\begin{center}
+PM$_{2.5}$,\ \ PM$_{10}$,\ \ NO,\ \ NO$_2$,\ \ NO$_x$,\ \ NH$_3$,\ \ CO,\ \ SO$_2$,\ \ O$_3$,\ \ Benzene,\ \ Toluene,\ \ Xylene.
+\end{center}
+
+A sliding window of $T = 14$ consecutive days is applied to construct fixed-length input sequences, capturing a two-week snapshot of urban air quality dynamics. Days with more than 20\% missing sensor values are discarded; remaining missing values are forward-filled within each city's time series before windowing.
+
+\subsection{Label Construction and Class Distribution}
+
+The continuous AQI score is mapped to $K = 3$ ordinal classes based on the CPCB AQI classification scheme:
+
+\begin{itemize}
+    \item \textbf{Good} (AQI $\leq 100$): Air quality is satisfactory; little or no risk to public health.
+    \item \textbf{Moderate} ($100 <$ AQI $\leq 300$): Air quality is acceptable; some pollutants may pose a moderate health concern for sensitive groups.
+    \item \textbf{Poor} (AQI $> 300$): Air quality is hazardous; health warnings of emergency conditions apply.
+\end{itemize}
+
+The three-class scheme merges the six original CPCB categories (Good, Satisfactory, Moderate, Poor, Very Poor, Severe) into coarser operational buckets suitable for time-series classification. The class distribution is geographically and seasonally skewed: cities in the Indo-Gangetic Plain (e.g., Delhi, Lucknow, Patna) contribute predominantly to the Poor class, especially during winter months (October–February) when temperature inversions trap pollutants near the surface.
+
+\textbf{Dataset summary:} $T = 14$ timesteps (daily), $D = 12$ pollutant features, $K = 3$ classes.
+
+%------------------------------------------------------------------------
+\section{NATOPS — Human Gesture Recognition}
+
+\subsection{Dataset Description}
+
+The NATOPS dataset~\cite{zhang2011extracting} is a multivariate time-series benchmark for human gesture recognition sourced from the UEA Time Series Classification Archive~\cite{bagnall2018uea}. It contains motion-capture recordings of naval aircraft handling officers performing standardised hand signals (NATOPS — Naval Air Training and Operating Procedures Standardisation) used on aircraft carrier flight decks.
+
+Each recording captures the 3-dimensional position ($x$, $y$, $z$) of eight body landmarks: right hand, left hand, right elbow, left elbow, right wrist, left wrist, right thumb, and left thumb. This yields $D = 24$ sensor channels per timestep. Each sequence has a fixed length of $T = 51$ timesteps. The dataset contains 180 training samples and 180 test samples, balanced across six gesture classes ($K = 6$):
+
+\begin{enumerate}
+    \item \textit{I have command}
+    \item \textit{All clear}
+    \item \textit{Not clear}
+    \item \textit{Spread wings}
+    \item \textit{Fold wings}
+    \item \textit{Lock wings}
+\end{enumerate}
+
+\subsection{Class Distribution}
+
+The NATOPS dataset is perfectly balanced, with exactly 30 training samples and 30 test samples per class, for a total of 360 samples. This balance, combined with the rich multi-limb motion-capture structure, makes NATOPS a stringent test of multivariate counterfactual coherence: a valid counterfactual for a ``Fold wings'' prediction must generate a physically plausible full-body gesture trajectory corresponding to the target class, respecting the kinematic constraints between the hand, elbow, and wrist landmarks.
+
+\textbf{Dataset summary:} $T = 51$ timesteps, $D = 24$ sensor channels (8 body landmarks $\times$ 3 axes), $K = 6$ gesture classes, 360 samples total.
+
+%------------------------------------------------------------------------
+\section{Data Preprocessing}
+
+A unified preprocessing pipeline is applied to all three datasets before model training and counterfactual generation. The pipeline consists of three stages: Z-score normalisation, sliding-window construction, and label mapping.
+
+\subsection{Z-Score Normalisation}
+
+Each sensor channel is normalised independently using Z-score standardisation:
+\begin{equation}
+    \hat{x}_{t,d} = \frac{x_{t,d} - \mu_d}{\sigma_d},
+\end{equation}
+where $\mu_d$ and $\sigma_d$ are the mean and standard deviation of channel $d$ computed over the \emph{training set only}. Test set samples are normalised using training-set statistics to prevent data leakage. Normalisation ensures that all sensor channels contribute on equal footing to the model and to the counterfactual optimisation objective, preventing channels with large numerical ranges (e.g., CMAPSS temperature sensors in Kelvin vs.\ dimensionless ratios) from dominating the L1 and L2 proximity terms.
+
+\subsection{Sliding-Window Construction}
+
+For variable-length time series (CMAPSS, AQI), a sliding window of fixed length $T$ is applied with a stride of 1 timestep to generate fixed-length samples:
+\begin{equation}
+    \mathbf{X}^{(i)} = \left[\mathbf{x}_{t_i}, \mathbf{x}_{t_i+1}, \ldots, \mathbf{x}_{t_i + T - 1}\right] \in \mathbb{R}^{T \times D},
+\end{equation}
+where $t_i$ is the start index of the $i$-th window. The label for each window is taken as the label of the \emph{last} timestep in the window, reflecting the degradation or air quality state at the end of the observation period. NATOPS sequences are already of fixed length ($T = 51$) and do not require windowing.
+
+Table~\ref{tab:dataset_summary} summarises the windowing and preprocessing parameters for all three datasets. Continuous target values are mapped to integer class indices using the thresholds defined in the preceding sections. A stratified 80\%/20\% train/validation split is used for all datasets.
+
+\begin{table}[htbp]
+\centering
+\caption{Dataset and preprocessing summary.}
+\label{tab:dataset_summary}
+\begin{adjustbox}{max width=\textwidth}
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Dataset} & \textbf{$T$} & \textbf{$D$} & \textbf{$K$} & \textbf{Stride} & \textbf{Normalisation} & \textbf{Label type} & \textbf{Class weights} \\
+\midrule
+CMAPSS FD001 & 30 cycles    & 14 & 3 & 1 cycle     & Z-score & RUL $\to$ 3 classes     & Yes \\
+AQI India    & 14 days      & 12 & 3 & 1 day       & Z-score & AQI $\to$ 3 classes     & Yes \\
+NATOPS       & 51 timesteps & 24 & 6 & N/A (fixed) & Z-score & Categorical (6 classes) & No  \\
+\bottomrule
+\end{tabular}
+\end{adjustbox}
+\end{table}

@@ -1,0 +1,252 @@
+\chapter{TAGFC Methodology}
+
+This chapter presents the complete TAGFC (\textbf{T}ransformer \textbf{A}ttention-\textbf{G}uided \textbf{F}requency \textbf{C}ounterfactual) framework. We first describe the Transformer classifier architecture and its training procedure, then detail the five-step TAGFC pipeline, and conclude with a computational complexity comparison against baseline methods.
+
+%------------------------------------------------------------------------
+\section{Overview of the TAGFC Framework}
+
+Given a trained Transformer classifier $f: \mathbb{R}^{T \times D} \rightarrow \Delta^K$ and a query instance $\mathbf{X} \in \mathbb{R}^{T \times D}$ with predicted class $y = \arg\max f(\mathbf{X})$, TAGFC generates a counterfactual $\widetilde{\mathbf{X}} \in \mathbb{R}^{T \times D}$ with target class $y^* \neq y$ by solving a structured optimisation problem in the Haar wavelet domain.
+
+The framework proceeds in five sequential steps:
+
+\begin{enumerate}
+    \item \textbf{Attention Rollout} — Extract a temporal saliency map $\mathbf{s} \in [0,1]^T$ from the Transformer's multi-layer attention weights.
+    \item \textbf{Haar DWT} — Decompose each sensor channel of $\mathbf{X}$ into wavelet coefficients $\mathbf{C} \in \mathbb{R}^{D \times L}$ via the Discrete Wavelet Transform.
+    \item \textbf{Omega Weights} — Compute a per-coefficient importance weight $\boldsymbol{\omega} \in \mathbb{R}^{D \times L}_{>0}$ by combining attention saliency with input-gradient magnitude, assigning low cost to changing unimportant coefficients.
+    \item \textbf{Four-term Optimisation} — Solve for a sparse, coherent coefficient perturbation $\boldsymbol{\delta} \in \mathbb{R}^{D \times L}$ that minimises a four-term objective balancing class flip, sparsity, cross-sensor coherence, and manifold proximity.
+    \item \textbf{Proximal Gradient Descent} — Optimise the objective using Proximal GD with soft-thresholding, achieving exact coefficient-level sparsity at each iteration.
+\end{enumerate}
+
+The counterfactual is reconstructed as $\widetilde{\mathbf{X}} = \text{iDWT}(\mathbf{C} + \boldsymbol{\delta}^*)$, where $\boldsymbol{\delta}^*$ is the converged perturbation and iDWT denotes the inverse Haar wavelet transform.
+
+%------------------------------------------------------------------------
+\section{Transformer Classifier Architecture}
+
+\subsection{Model Architecture}
+
+The same Transformer encoder architecture is used for all three datasets, with dataset-specific input and output dimensions. The architecture consists of five components:
+
+\begin{enumerate}
+    \item \textbf{Input projection}: A linear layer projects the $D$-dimensional sensor vector at each timestep to a $d_{\text{model}}$-dimensional embedding space:
+    \begin{equation}
+        \mathbf{H}^{(0)} = \mathbf{X} \mathbf{W}_{\text{in}} + \mathbf{b}_{\text{in}}, \quad \mathbf{W}_{\text{in}} \in \mathbb{R}^{D \times d_{\text{model}}}.
+    \end{equation}
+
+    \item \textbf{Sinusoidal Positional Encoding}: A fixed sinusoidal positional encoding $\mathbf{PE} \in \mathbb{R}^{T \times d_{\text{model}}}$ is added to inject temporal order information:
+    \begin{equation}
+        \text{PE}(t, 2k) = \sin\!\left(\frac{t}{10000^{2k/d_{\text{model}}}}\right), \quad \text{PE}(t, 2k+1) = \cos\!\left(\frac{t}{10000^{2k/d_{\text{model}}}}\right).
+    \end{equation}
+
+    \item \textbf{Transformer Encoder Layers}: $L$ stacked encoder layers, each with pre-LayerNorm (norm\_first), multi-head self-attention (MHSA) with $H$ heads, and a position-wise feed-forward network (FFN) with hidden dimension $d_{\text{ff}}$:
+    \begin{align}
+        \mathbf{H}' &= \mathbf{H}^{(l-1)} + \text{MHSA}\!\left(\text{LN}(\mathbf{H}^{(l-1)})\right), \\
+        \mathbf{H}^{(l)} &= \mathbf{H}' + \text{FFN}\!\left(\text{LN}(\mathbf{H}')\right).
+    \end{align}
+
+    \item \textbf{Global Average Pooling}: The temporal dimension is collapsed by averaging across all $T$ timesteps:
+    \begin{equation}
+        \mathbf{z} = \frac{1}{T} \sum_{t=1}^{T} \mathbf{H}^{(L)}_t \in \mathbb{R}^{d_{\text{model}}}.
+    \end{equation}
+
+    \item \textbf{Classification Head}: A dropout layer followed by a linear projection produces class logits:
+    \begin{equation}
+        \hat{\mathbf{y}} = \text{softmax}(\text{Dropout}(\mathbf{z}) \mathbf{W}_{\text{out}} + \mathbf{b}_{\text{out}}), \quad \mathbf{W}_{\text{out}} \in \mathbb{R}^{d_{\text{model}} \times K}.
+    \end{equation}
+\end{enumerate}
+
+For the NATOPS dataset, the architecture is configured as: $d_{\text{model}} = 64$, $L = 3$ encoder layers, $H = 4$ attention heads, $d_{\text{ff}} = 128$, Dropout rate $= 0.1$. This yields an input shape of $(B, 51, 24)$ and an output of $K = 6$ class probabilities.
+
+\subsection{Training Details}
+
+The Transformer classifier is trained with the following configuration, kept consistent across all datasets:
+
+\begin{itemize}
+    \item \textbf{Optimiser}: AdamW~\cite{loshchilov2019decoupled} with learning rate $\eta = 1 \times 10^{-3}$ and weight decay $\lambda_w = 1 \times 10^{-4}$.
+    \item \textbf{Learning rate schedule}: Cosine annealing (\texttt{CosineAnnealingLR}) over the full training run, decaying from $\eta$ to $0$.
+    \item \textbf{Training duration}: 200 epochs.
+    \item \textbf{Best model restoration}: The model checkpoint achieving the highest validation accuracy is saved during training and restored at the end. This prevents overfitting on the final epoch and ensures the counterfactual generator operates on the best-generalising model.
+    \item \textbf{Loss function}: Cross-entropy loss, with class weighting applied for imbalanced datasets (CMAPSS, AQI India).
+    \item \textbf{Batch size}: 64.
+\end{itemize}
+
+%------------------------------------------------------------------------
+\section{Step 1 — Attention Rollout}
+
+Let $\mathbf{A}^l \in \mathbb{R}^{T \times T}$ denote the head-averaged attention matrix at encoder layer $l$, where $A^l_{ij}$ is the average (over $H$ heads) attention weight from position $i$ to position $j$. Attention rollout~\cite{abnar2020quantifying} accounts for the residual connection at each layer by blending the attention matrix with the identity:
+
+\begin{equation}
+    \hat{\mathbf{A}}^l = 0.5 \cdot \mathbf{A}^l + 0.5 \cdot \mathbf{I}, \quad l = 1, \ldots, L,
+\end{equation}
+
+where $\mathbf{I} \in \mathbb{R}^{T \times T}$ is the identity matrix. The factor $0.5$ reflects the equal weighting of the attention path and the residual (skip-connection) path. The global rollout matrix is then computed as the sequential product of all layer-wise blended attention matrices:
+
+\begin{equation}
+    \mathbf{R} = \prod_{l=1}^{L} \hat{\mathbf{A}}^l = \hat{\mathbf{A}}^L \cdot \hat{\mathbf{A}}^{L-1} \cdots \hat{\mathbf{A}}^1.
+\end{equation}
+
+The temporal saliency score for each timestep $t$ is obtained by summing over the rows of $\mathbf{R}$ (i.e., how much total attention flows \emph{into} position $t$ from all other positions):
+
+\begin{equation}
+    s_t = \sum_{i=1}^{T} R_{it}, \quad t = 1, \ldots, T,
+\end{equation}
+
+and the scores are min-max normalised to $[0, 1]$:
+
+\begin{equation}
+    s_t \leftarrow \frac{s_t - \min_t s_t}{\max_t s_t - \min_t s_t}.
+\end{equation}
+
+The resulting vector $\mathbf{s} \in [0,1]^T$ assigns high values to timesteps the Transformer model attends to most strongly across all layers and heads when forming its classification decision. These high-saliency timesteps are the primary targets for counterfactual perturbation.
+
+%------------------------------------------------------------------------
+\section{Step 2 — Haar Discrete Wavelet Transform}
+
+\subsection{Haar Wavelet Decomposition}
+
+The Haar wavelet is the simplest orthonormal wavelet, defined by the scaling function $\phi(t) = \mathbf{1}_{[0,1)}$ and the mother wavelet $\psi(t) = \mathbf{1}_{[0,0.5)} - \mathbf{1}_{[0.5,1)}$. For a 1D signal of length $N$, the Haar DWT computes $\lfloor \log_2 N \rfloor$ levels of approximation (low-pass) and detail (high-pass) coefficients recursively.
+
+In TAGFC, the DWT is applied \emph{independently} to each of the $D$ sensor channels. For a sequence $\mathbf{x}_d \in \mathbb{R}^T$, the signal is zero-padded to the next power of 2 (e.g., $T = 51 \rightarrow N = 64$ for NATOPS), and a 3-level Haar DWT is applied to produce a coefficient vector $\mathbf{c}_d \in \mathbb{R}^L$, where $L = N$ is the total number of DWT coefficients (the transform is an orthonormal basis, so the number of coefficients equals the signal length after padding). The full coefficient matrix is:
+
+\begin{equation}
+    \mathbf{C} = \text{DWT}(\mathbf{X}) \in \mathbb{R}^{D \times L}, \quad L = 2^{\lceil \log_2 T \rceil}.
+\end{equation}
+
+The coefficient layout for a 3-level decomposition of a length-64 signal is:
+\begin{itemize}
+    \item \textbf{Level 3 approximation} (indices 0–7): 8 coefficients encoding the coarsest, slowest trend.
+    \item \textbf{Level 3 detail} (indices 8–15): 8 coefficients encoding mid-low frequency content.
+    \item \textbf{Level 2 detail} (indices 16–31): 16 coefficients encoding mid-frequency content.
+    \item \textbf{Level 1 detail} (indices 32–63): 32 coefficients encoding high-frequency, fine-grained transients.
+\end{itemize}
+
+The perturbation variable $\boldsymbol{\delta} \in \mathbb{R}^{D \times L}$ is defined in this coefficient space. The perturbed signal is:
+\begin{equation}
+    \widetilde{\mathbf{X}} = \text{iDWT}(\mathbf{C} + \boldsymbol{\delta}),
+\end{equation}
+where iDWT denotes the inverse Haar DWT, which reconstructs a time-domain signal of length $T$ from the perturbed coefficients (discarding the zero-padded samples).
+
+%------------------------------------------------------------------------
+\section{Step 3 — Omega Importance Weights}
+
+\textbf{Input gradient.} The signed gradient of the classifier's log-probability with respect to the input is computed and its absolute value smoothed with a Gaussian filter (standard deviation $\sigma = 1.5$ timesteps) to reduce noise:
+\begin{equation}
+    \mathbf{G} = \left| \nabla_{\mathbf{X}} \log P(y \mid \mathbf{X}) \right|_{\text{Gaussian-smoothed}} \in \mathbb{R}^{T \times D}.
+\end{equation}
+
+\textbf{Gradient in wavelet domain.} The gradient magnitude map is transformed to the wavelet domain:
+\begin{equation}
+    \mathbf{G}_{\text{wav}} = \text{DWT}(\mathbf{G}) \in \mathbb{R}^{D \times L}.
+\end{equation}
+
+\textbf{Joint saliency-gradient importance.} The attention rollout saliency $\mathbf{s} \in [0,1]^T$ is broadcast across channels and transformed to coefficient importance by weighting $\mathbf{G}_{\text{wav}}$ by the per-timestep saliency. Specifically, the importance map $\mathbf{M} \in \mathbb{R}^{D \times L}$ is:
+\begin{equation}
+    M_{d,k} = s_{\tau(k)} \cdot G_{\text{wav},d,k},
+\end{equation}
+where $\tau(k)$ maps coefficient index $k$ to its representative timestep (the centre of the corresponding Haar basis function's support in the time domain).
+
+\textbf{Omega weights.} The omega weight is defined as the inverse of the normalised importance map, so that high-importance coefficients receive high omega (are expensive to change) and low-importance coefficients receive low omega (are cheap to change):
+\begin{equation}
+    \omega_{d,k} = \frac{1}{\bar{M}_{d,k} + \epsilon}, \quad \bar{M}_{d,k} = \frac{M_{d,k}}{\max_{d,k} M_{d,k}},
+\end{equation}
+where $\epsilon > 0$ is a small constant for numerical stability. The omega matrix $\boldsymbol{\omega} \in \mathbb{R}^{D \times L}_{>0}$ serves as the per-coefficient penalty weight in the sparsity loss.
+
+%------------------------------------------------------------------------
+\section{Step 4 — Four-Term Objective Function}
+
+The counterfactual perturbation $\boldsymbol{\delta}$ is found by minimising a four-term objective:
+\begin{equation}
+    \mathcal{L}(\boldsymbol{\delta}) = \mathcal{L}_{\text{flip}} + \lambda_1 \mathcal{L}_{\text{sparse}} + \lambda_2 \mathcal{L}_{\text{cross}} + \lambda_3 \mathcal{L}_{\text{manifold}},
+\end{equation}
+where $\lambda_1, \lambda_2, \lambda_3 > 0$ are regularisation weights. Each term is described below.
+
+\subsection{Class-Flip Loss $\mathcal{L}_{\text{flip}}$}
+
+The class-flip loss is the negative log-probability of the target class $y^*$ under the perturbed input:
+\begin{equation}
+    \mathcal{L}_{\text{flip}} = -\log P\!\left(y^* \mid \widetilde{\mathbf{X}}\right) = -\log f_{y^*}\!\left(\text{iDWT}(\mathbf{C} + \boldsymbol{\delta})\right).
+\end{equation}
+Minimising $\mathcal{L}_{\text{flip}}$ drives the classifier's predicted probability toward the target class. Once $\arg\max f(\widetilde{\mathbf{X}}) = y^*$, the counterfactual is declared \emph{valid}.
+
+\subsection{Omega-Weighted Sparsity Loss $\mathcal{L}_{\text{sparse}}$}
+
+The sparsity loss is a weighted L1 norm on the perturbation coefficients, with the omega weights penalising changes to important coefficients more heavily:
+\begin{equation}
+    \mathcal{L}_{\text{sparse}} = \sum_{d=1}^{D} \sum_{k=1}^{L} \omega_{d,k} \cdot |\delta_{d,k}|.
+\end{equation}
+The omega weighting ensures that the optimiser prefers to concentrate perturbations in low-importance, low-saliency coefficients, producing sparse counterfactuals that change only the most necessary and least informative parts of the signal.
+
+\subsection{Cross-Sensor Coherence Loss $\mathcal{L}_{\text{cross}}$}
+
+Physical systems impose statistical dependencies between sensor channels. To enforce that the perturbed sensor channels remain mutually consistent, a Mahalanobis-distance penalty is applied to the inter-sensor difference between the counterfactual and the original:
+\begin{equation}
+    \mathcal{L}_{\text{cross}} = \mathbf{r}^\top \boldsymbol{\Sigma}^{-1} \mathbf{r}, \quad \mathbf{r} = \bar{\widetilde{\mathbf{x}}} - \bar{\mathbf{x}},
+\end{equation}
+where $\bar{\mathbf{x}} = \frac{1}{T}\sum_t \mathbf{x}_t \in \mathbb{R}^D$ is the per-channel temporal mean of the original instance, $\bar{\widetilde{\mathbf{x}}}$ is the corresponding mean of the counterfactual, and $\boldsymbol{\Sigma} \in \mathbb{R}^{D \times D}$ is the inter-sensor covariance matrix estimated from the training set. $\mathcal{L}_{\text{cross}}$ penalises perturbations that push the mean sensor vector in directions inconsistent with the observed covariance structure, preventing physically implausible cross-sensor combinations.
+
+\subsection{Manifold Proximity Loss $\mathcal{L}_{\text{manifold}}$}
+
+To ensure that the counterfactual lies on the data manifold of the target class (rather than in an out-of-distribution region), a Frobenius-norm proximity loss is included:
+\begin{equation}
+    \mathcal{L}_{\text{manifold}} = \frac{\|\widetilde{\mathbf{X}} - \mathbf{X}_{\text{nn}}\|_F^2}{T \cdot D},
+\end{equation}
+where $\mathbf{X}_{\text{nn}}$ is the Nearest Unlike Neighbour (NUN) — the training instance with class $y^*$ most similar to $\mathbf{X}$ in Euclidean distance. The normalisation by $T \cdot D$ makes the loss scale-invariant across datasets. $\mathcal{L}_{\text{manifold}}$ acts as a soft anchor, pulling the counterfactual toward a real target-class example while the other terms control validity and sparsity.
+
+\subsection{Hyperparameters}
+
+The regularisation coefficients and optimisation hyperparameters used across all experiments are summarised in Table~\ref{tab:hyperparams}.
+
+\begin{table}[htbp]
+\centering
+\caption{TAGFC hyperparameters used in all experiments.}
+\label{tab:hyperparams}
+\begin{tabular}{llc}
+\toprule
+\textbf{Parameter} & \textbf{Description} & \textbf{Value} \\
+\midrule
+$\lambda_1$ & Sparsity regularisation weight        & 0.02  \\
+$\lambda_2$ & Cross-sensor coherence weight         & 0.01  \\
+$\lambda_3$ & Manifold proximity weight             & 0.10  \\
+$\eta$      & Proximal GD learning rate             & 0.05  \\
+\texttt{MAX\_ITER}    & Maximum optimisation iterations & 300   \\
+\texttt{PATIENCE}     & Early stopping patience         & 25    \\
+\texttt{DELTA\_BOUND} & Perturbation clipping bound     & 2.5   \\
+$\sigma$    & Gradient smoothing (Gaussian $\sigma$) & 1.5  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%------------------------------------------------------------------------
+\section{Step 5 — Proximal Gradient Descent with Soft-Thresholding}
+
+\subsection{Motivation}
+
+The presence of the L1 term $\mathcal{L}_{\text{sparse}}$ makes the objective non-smooth at $\boldsymbol{\delta} = \mathbf{0}$; standard gradient descent does not converge to a sparse solution because small gradient steps never exactly zero out coefficients. Proximal Gradient Descent (Proximal GD) resolves this by applying a closed-form soft-thresholding operator after each gradient step, which sets small-magnitude coefficients \emph{exactly} to zero.
+
+\subsection{Algorithm}
+
+Let $\mathcal{L}_{\text{smooth}}(\boldsymbol{\delta}) = \mathcal{L}_{\text{flip}} + \lambda_2 \mathcal{L}_{\text{cross}} + \lambda_3 \mathcal{L}_{\text{manifold}}$ denote the smooth part of the objective (all terms except $\mathcal{L}_{\text{sparse}}$). Each iteration of Proximal GD proceeds as follows:
+
+\begin{enumerate}
+    \item \textbf{Gradient step}: Compute the gradient of the smooth objective and take a step:
+    \begin{equation}
+        \boldsymbol{\delta}^{(i+\frac{1}{2})} = \boldsymbol{\delta}^{(i)} - \eta \, \nabla_{\boldsymbol{\delta}} \mathcal{L}_{\text{smooth}}\!\left(\boldsymbol{\delta}^{(i)}\right).
+    \end{equation}
+
+    \item \textbf{Proximal step (soft-thresholding)}: Apply the proximal operator of the weighted L1 norm element-wise:
+    \begin{equation}
+        \delta^{(i+1)}_{d,k} = \text{sign}\!\left(\delta^{(i+\frac{1}{2})}_{d,k}\right) \cdot \max\!\left(\left|\delta^{(i+\frac{1}{2})}_{d,k}\right| - \eta \lambda_1 \omega_{d,k},\ 0\right).
+    \end{equation}
+    The threshold $\eta \lambda_1 \omega_{d,k}$ is proportional to the omega weight: high-omega (important) coefficients face a larger threshold and are harder to change, while low-omega coefficients face a smaller threshold and are set to zero more readily.
+
+    \item \textbf{Perturbation clipping}: Clip the perturbation to the allowed range:
+    \begin{equation}
+        \boldsymbol{\delta}^{(i+1)} \leftarrow \text{clip}\!\left(\boldsymbol{\delta}^{(i+1)},\ -\Delta_{\max},\ \Delta_{\max}\right), \quad \Delta_{\max} = 2.5.
+    \end{equation}
+\end{enumerate}
+
+\subsection{Convergence and Early Stopping}
+
+Optimisation terminates when either (a) the maximum number of iterations (\texttt{MAX\_ITER} = 300) is reached, or (b) the total objective $\mathcal{L}(\boldsymbol{\delta})$ fails to decrease by more than $10^{-6}$ for \texttt{PATIENCE} = 25 consecutive iterations. If the classifier's predicted class changes to $y^*$ at any iteration, that iterate is recorded as the current best counterfactual; this allows the method to continue refining sparsity and coherence even after achieving validity.
+
+The soft-thresholding step guarantees that the final solution $\boldsymbol{\delta}^*$ is exactly sparse in the wavelet domain: most $\delta^*_{d,k} = 0$ exactly (not just numerically small), and the non-zero entries concentrate in the wavelet sub-bands and sensor channels identified as important by the omega weights.
+

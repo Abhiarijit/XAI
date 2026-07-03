@@ -1,0 +1,32 @@
+\chapter{Conclusion and Future Work}
+
+%========================================================================
+\section{Summary of Contributions}
+
+This work presented \textbf{TAGFC} (Transformer Attention-Guided Frequency Counterfactual), a novel framework for generating actionable counterfactual explanations for Transformer-based multivariate time-series classifiers, evaluated on NASA CMAPSS FD001 and NATOPS against CoMTE and AB-CF using eight quantitative metrics and rigorous statistical testing.
+
+Three unique contributions are made. \textbf{(1) Frequency-domain counterfactual generation}: TAGFC is the first method to perturb wavelet coefficients rather than raw time-domain values, producing frequency-localised, physically interpretable modifications — slow HPC drift in approximation coefficients, fast transients in detail coefficients — entirely absent from all prior work. \textbf{(2) Model-aware saliency via attention rollout}: by propagating multi-head self-attention through all $L$ layers and $H$ heads with residual weighting, TAGFC builds omega importance weights that focus perturbations on model-relevant timesteps, yielding more compact and interpretable counterfactuals than black-box or output-only baselines. \textbf{(3) Cross-sensor physical coherence}: the Mahalanobis penalty achieves coherence $5.7\times$--$5.8\times$ lower than both baselines ($p < 0.0001$), ensuring multi-sensor perturbations respect the physical covariance structure of real sensor data — a prerequisite for operationally actionable recommendations.
+
+%========================================================================
+\section{Limitations}
+
+TAGFC has four notable limitations. \textbf{Validity gap}: the constrained four-term optimisation achieves 86.7\% validity on NATOPS (vs.\ 100\% for both baselines) because the manifold and sparsity losses may prevent convergence within the iteration budget — a fundamental tension between minimality and guaranteed flip. \textbf{Time-domain sparsity measurement}: near-zero time-domain sparsity is an inverse-DWT artefact, not a true reflection of coefficient-level sparsity, creating a metric mismatch when comparing against time-domain methods. \textbf{Haar wavelet assumption}: the piecewise-constant Haar basis suits CMAPSS's piecewise-linear degradation model but may be suboptimal for smooth signals; Daubechies or learned wavelets would generalise better. \textbf{NUN retrieval cost}: exhaustive $\mathcal{O}(NTD)$ search becomes a bottleneck for $N > 10^5$; approximate methods (e.g., FAISS) would address this.
+
+%========================================================================
+\section{Future Work}
+
+Six high-priority directions are identified for future research.
+
+\begin{enumerate}
+    \item \textbf{Ablation study.} Systematically ablate each TAGFC component: (a) \textit{noRollout} — uniform omega weights; (b) \textit{noWavelet} — time-domain perturbation; (c) \textit{noCross} — $\lambda_2=0$; (d) \textit{noManifold} — $\lambda_3=0$, to quantify each component's independent contribution.
+
+    \item \textbf{Extend to regression-based RUL prediction.} Replace the cross-entropy flip loss with a margin loss $\max(0, f(\widetilde{\mathbf{X}}) - \tau)$ for a target RUL threshold $\tau$, enabling counterfactual generation directly over continuous RUL outputs.
+
+    \item \textbf{Apply to CMAPSS FD002--FD004 and additional UEA datasets.} FD002--FD004 introduce multiple operating conditions and fault modes; evaluating TAGFC on these and further UEA benchmarks would validate generalisation beyond single-condition settings.
+
+    \item \textbf{Replace Haar with Daubechies or learned wavelets.} Smoother orthonormal wavelets (e.g., Daubechies-4, Symlet-4) would better model continuously varying dynamics; a learned dictionary could further adapt the basis per dataset.
+
+    \item \textbf{Real-time counterfactual generation.} Amortised inference via a conditional VAE or normalising flow could replace iterative Proximal GD, reducing per-query runtime from seconds to milliseconds for online deployment.
+
+    \item \textbf{Causal counterfactual generation.} Replacing the Mahalanobis coherence penalty with a structural causal model (SCM) constraint would guarantee that generated counterfactuals correspond to causally achievable system interventions.
+\end{enumerate}
